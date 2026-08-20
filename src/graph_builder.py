@@ -22,7 +22,7 @@ SIMULATE_CRAWL = os.getenv("SIMULATE_CRAWL", "true").lower() == "true"
 SIMULATE_IMAGE = os.getenv("SIMULATE_IMAGE", "true").lower() == "true"
 SIMULATE_TRANSLATE = os.getenv("SIMULATE_TRANSLATE", "true").lower() == "true"
 SIMULATE_MIAOSHOU = os.getenv("SIMULATE_MIAOSHOU", "true").lower() == "true"
-CRAWL_HEADLESS = os.getenv("CRAWL_HEADLESS", "false").lower() == "true")
+CRAWL_HEADLESS = os.getenv("CRAWL_HEADLESS", "false").lower() == "true"
 
 
 async def crawl_agent(state: AgentState) -> AgentState:
@@ -44,6 +44,10 @@ async def crawl_agent(state: AgentState) -> AgentState:
         new_state = state.copy()
         new_state["raw_title"] = "跨境热销款 男士纯棉T恤"
         new_state["raw_desc"] = "男士夏季纯棉短袖T恤，多颜色多尺码可选，面料透气亲肤。"
+        # 修复：同步写入cn_title、cn_description，数据库、接口不再返回null
+        new_state["cn_title"] = new_state["raw_title"]
+        new_state["cn_description"] = new_state["raw_desc"]
+
         new_state["raw_img_list"] = [
             f"data/images_raw/{pid}/main.png",
             f"data/images_raw/{pid}/sub_1.png",

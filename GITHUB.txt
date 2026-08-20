@@ -1,0 +1,14 @@
+github
+登录命令如下
+powershell
+# 切换到项目根目录
+cd G:\Projects\auto_cross_0.1
+
+# 确认目录，看有没有 .git 隐藏文件夹
+dir -Force
+
+# 查看本地分支确认
+git branch
+
+# 推送本地master分支到github远程master
+git push -u origin master

@@ -55,10 +55,11 @@ class OzonGoodsPayload(BaseModel):
     pay_ad_switch: bool = False
 
 
-# 简易测试入参：只需要product_id + source_url
+# 简易测试入参：只需要product_id + source_url，增加market_target
 class SimpleTaskCreate(BaseModel):
     product_id: str
     source_url: str
+    market_target: List[str] = Field(default_factory=lambda: ["ozon"], description="目标铺货平台")
 
 
 # 请求体模型（新增简易批量任务模型）
@@ -89,7 +90,7 @@ async def lifespan(app: FastAPI):
 
 
 # 后台流水线任务【修复：流水线结束手动赋值status=completed】
-async def run_cross_workflow(payload: OzonGoodsPayload):
+async def run_cross_workflow(payload: OzonGoodsPayload, market_target: List[str]):
     global workflow_instance
     try:
         init_state = {
@@ -97,6 +98,7 @@ async def run_cross_workflow(payload: OzonGoodsPayload):
             "url": payload.source_url,
             "source_url": payload.source_url,
             "ozon_payload": payload.model_dump(),
+            "market_target": market_target,
             "cn_title": "",
             "cn_description": "",
             "ru_title": "",
@@ -112,12 +114,12 @@ async def run_cross_workflow(payload: OzonGoodsPayload):
             "package_width": payload.package_width,
             "package_height": payload.package_height
         }
-        logger.info(f"[流水线启动] product_id = {payload.product_id}")
+        logger.info(f"[流水线启动] product_id = {payload.product_id}, market_target={market_target}")
         result = await workflow_instance.ainvoke(init_state)
         # 流水线正常走完，强制赋值完成状态
         result["status"] = "completed"
 
-        # 保存全部流水线结果至PostgreSQL（包含sku_list数组）
+        # 保存全部流水线结果至PostgreSQL（包含sku_list数组，选品decision全套字段）
         await save_or_update_task(result)
 
         await task_store.save_task(payload.product_id, {
@@ -165,6 +167,7 @@ async def process_product(request: ProductRequest):
             "product_id": request.product_id,
             "url": request.source_url,
             "source_url": request.source_url,
+            "market_target": request.market_target,
             "cn_title": request.cn_title or "",
             "cn_description": request.cn_description or "",
             "ru_title": "",
@@ -222,7 +225,7 @@ async def create_simple_task(req: SimpleTaskCreate, background_tasks: Background
     )
     background_task_map[pid] = True
     await task_store.save_task(pid, {"status": "pending", "product_id": pid})
-    background_tasks.add_task(run_cross_workflow, payload)
+    background_tasks.add_task(run_cross_workflow, payload, req.market_target)
     return {
         "code":0,
         "msg":"简易任务提交成功，后台执行",
@@ -244,8 +247,8 @@ async def create_task(payload: OzonGoodsPayload, background_tasks: BackgroundTas
 
     background_task_map[payload.product_id] = True
     await task_store.save_task(payload.product_id, {"status": "pending", "product_id": payload.product_id})
-    # 将完整payload传入后台任务，流水线能够读取SKU、包装参数
-    background_tasks.add_task(run_cross_workflow, payload)
+    # 将完整payload传入后台任务，流水线能够读取SKU、包装参数，默认market_target=["ozon"]
+    background_tasks.add_task(run_cross_workflow, payload, ["ozon"])
     return {"code": 200, "msg": "任务创建成功‑后台开始处理", "product_id": payload.product_id}
 
 
@@ -265,7 +268,7 @@ async def batch_task(goods_list: List[OzonGoodsPayload], background_tasks: Backg
 
         background_task_map[item.product_id] = True
         await task_store.save_task(item.product_id, {"status": "pending", "product_id": item.product_id})
-        background_tasks.add_task(run_cross_workflow, item)
+        background_tasks.add_task(run_cross_workflow, item, ["ozon"])
         success_list.append(item.product_id)
     return {
         "code": 200,
@@ -292,7 +295,7 @@ async def batch_process(req: BatchProductRequest, background_tasks: BackgroundTa
         )
         background_task_map[pid] = True
         await task_store.save_task(pid, {"status": "pending", "product_id": pid})
-        background_tasks.add_task(run_cross_workflow, payload)
+        background_tasks.add_task(run_cross_workflow, payload, ["ozon"])
         success_list.append(pid)
 
     return {
@@ -329,7 +332,31 @@ async def get_status(pid: str):
     task_info = await get_one_task(pid)
     if not task_info:
         raise HTTPException(status_code=404, detail="找不到该任务")
-    return task_info
+    # ORM对象转字典返回
+    return {
+        "id": task_info.product_id,
+        "product_id": task_info.product_id,
+        "source_url": task_info.source_url,
+        "cn_title": task_info.cn_title,
+        "cn_description": task_info.cn_description,
+        "ru_title": task_info.ru_title,
+        "ru_description": task_info.ru_description,
+        "raw_img_path": task_info.raw_img_path,
+        "processed_img_path": task_info.processed_img_path,
+        "sku_data": task_info.sku_data if task_info.sku_data else [],
+        "task_status": task_info.task_status,
+        "error_msg": task_info.error_msg,
+        "erp_goods_id": task_info.erp_goods_id,
+        "ozon_goods_id": task_info.ozon_goods_id,
+        "create_time": task_info.create_time.isoformat() if task_info.create_time else None,
+        "update_time": task_info.update_time.isoformat() if task_info.update_time else None,
+        # 选品决策返回字段
+        "decision": task_info.decision,
+        "decision_reason": task_info.decision_reason,
+        "score": float(task_info.score) if task_info.score is not None else None,
+        "risk_flag": bool(task_info.risk_flag),
+        "market_target": task_info.market_target if task_info.market_target else []
+    }
 
 
 @app.get("/api/risk-log/{pid}", summary="获取商品风控拦截日志")
@@ -345,7 +372,7 @@ async def get_risk_log(pid: str):
                 "risk_level": item.risk_level,
                 "risk_reason": item.risk_reason,
                 "risk_detail": item.risk_detail,
-                "create_time": item.create_time
+                "create_time": item.create_time.isoformat() if item.create_time else None
             }
             for item in logs
         ]

@@ -23,6 +23,14 @@ class AutoCrossTask(Base):
     raw_img_path = Column(Text)
     processed_img_path = Column(Text)
     sku_data = Column(JSONB, default=[])
+
+    # =========新增选品决策字段=========
+    decision = Column(String(20), default="pending")
+    decision_reason = Column(Text)
+    score = Column(Numeric(4,2))
+    risk_flag = Column(Integer, default=0)
+    market_target = Column(JSONB, default=[])
+
     task_status = Column(String)
     error_msg = Column(Text)
     erp_goods_id = Column(String(128))
@@ -113,26 +121,39 @@ async def get_one_task(product_id: str):
 
 
 async def save_or_update_task(state: dict):
-    from sqlalchemy import select
+    """保存/更新auto_cross_task，完整接收LangGraph state全部字段，包含选品decision相关字段"""
     pid = state["product_id"]
+    from sqlalchemy import select
     async with AsyncSessionLocal() as session:
         stmt = select(AutoCrossTask).where(AutoCrossTask.product_id == pid)
         row = await session.execute(stmt)
         task = row.scalar_one_or_none()
         if not task:
             task = AutoCrossTask(id=pid, product_id=pid)
+
+        # 兜底逻辑：cn_title为空，自动读取raw_title
+        task.cn_title = state.get("cn_title") or state.get("raw_title")
+        task.cn_description = state.get("cn_description") or state.get("raw_desc")
+
         task.source_url = state.get("source_url")
-        task.cn_title = state.get("cn_title")
-        task.cn_description = state.get("cn_description")
         task.ru_title = state.get("ru_title")
         task.ru_description = state.get("ru_description")
         task.raw_img_path = ",".join(state.get("raw_img_list", []))
         task.processed_img_path = ",".join(state.get("processed_img_list", []))
-        task.sku_data = state.get("sku_list", [])
-        task.task_status = state.get("status")
+        task.sku_data = state.get("raw_sku_list", [])
+
+        # =========写入选品决策字段=========
+        task.decision = state.get("decision", "pending")
+        task.decision_reason = state.get("decision_reason", "")
+        task.score = state.get("score")
+        task.risk_flag = 1 if bool(state.get("risk_flag")) else 0
+        task.market_target = state.get("market_target", [])
+
+        task.task_status = state.get("status", "pending")
         task.error_msg = state.get("error_msg")
-        task.erp_goods_id = state.get("erp_goods_id")
+        task.erp_goods_id = state.get("miaoshou_task_id")
         task.ozon_goods_id = state.get("ozon_goods_id")
+
         session.add(task)
         await session.commit()
 
