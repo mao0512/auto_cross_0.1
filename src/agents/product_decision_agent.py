@@ -2,7 +2,7 @@
 product_decision_agent.py
 选品决策Agent节点
 规则层：热词库、重量、毛利率、禁售词、退货损耗、物流时效风险
-LLM评审层：合规、市场适配评估
+LLM评审层：合规、市场适配评估，支持LLM_ENABLE开关关闭大模型仅硬规则运行
 条件：全部规则通过才向下流转；reject直接终止工作流，写入拒绝原因
 """
 import os
@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 # ========== 业务配置 从.env读取 ==========
 MIN_GROSS_MARGIN = float(os.getenv("MIN_GROSS_MARGIN", "0.25"))
 MAX_WEIGHT_KG = float(os.getenv("MAX_WEIGHT_KG", "2.0"))
+LLM_ENABLE = os.getenv("LLM_ENABLE", "true").lower() == "true"
 
 # 正向热词：命中加分，俄区热销关键词
 POSITIVE_HOT_WORDS = os.getenv("POSITIVE_HOT_WORDS", "居家,收纳,宠物,玩具,户外,保暖,日用,配饰").split(",")
@@ -31,9 +32,9 @@ LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "")
 
 async def llm_product_review(cn_title: str, cn_desc: str, sku_list: list, market_list: list) -> Dict[str, Any]:
-    """LLM评审：合规风险、市场适配打分，输出结构化json"""
-    if not LLM_API_KEY:
-        logger.warning("[ProductDecision] LLM密钥为空，跳过大模型评审，仅执行硬规则")
+    """LLM评审：合规风险、市场适配打分，输出结构化json；LLM_ENABLE=false直接跳过调用"""
+    if not LLM_ENABLE or not LLM_API_KEY:
+        logger.warning("[ProductDecision] LLM已关闭或者密钥为空，跳过大模型网络请求，仅硬规则评审")
         return {
             "risk_flag": False,
             "risk_reason": "跳过LLM评审，仅硬规则判断",
@@ -41,6 +42,7 @@ async def llm_product_review(cn_title: str, cn_desc: str, sku_list: list, market
             "suggestion": "",
             "decision": "accept"
         }
+
     prompt = f"""
 你是俄罗斯跨境电商选品专家。
 目标市场：{','.join(market_list)}
@@ -66,7 +68,7 @@ SKU信息：{json.dumps(sku_list, ensure_ascii=False)}
         from openai import AsyncOpenAI
         client = AsyncOpenAI(api_key=LLM_API_KEY, base_url=LLM_BASE_URL)
         resp = await client.chat.completions.create(
-            model="gpt‑4o‑mini",
+            model="gpt-4o-mini",
             messages=[{"role":"user","content":prompt}],
             temperature=0.1
         )
@@ -137,7 +139,7 @@ async def product_decision_node(state: AgentState) -> AgentState:
     base_score += len(hit_hot) * 0.6
     base_score = min(base_score, 10.0)
 
-    # 3 LLM评审
+    # 3 LLM评审（开关控制是否调用网络）
     llm_res = await llm_product_review(cn_title, cn_desc, sku_list, market_target)
     if llm_res.get("risk_flag"):
         new_state["risk_flag"] = True
