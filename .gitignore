@@ -1,0 +1,28 @@
+# 虚拟环境
+.venv/
+venv/
+
+# 环境密钥，严禁上传！
+.env
+
+# 运行产生图片、数据（图片目录体积很大不上传git）
+data/
+*.png
+*.jpg
+*.jpeg
+
+# python缓存
+__pycache__/
+*.pyc
+*.pyo
+
+#日志
+*.log
+
+#IDE配置
+.idea/
+.vscode/
+
+#数据库本地文件
+*.db
+*.sqlite

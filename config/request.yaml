@@ -1,0 +1,9 @@
+# 1688采集爬虫防封禁配置
+crawl:
+  min_sleep: 1.5
+  max_sleep: 2.5
+  page_timeout: 15000
+browser:
+  headless: false
+  viewport_width: 1280
+  viewport_height: 720

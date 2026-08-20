@@ -1,0 +1,13 @@
+{
+  "blacklist_keywords": [
+    "刺刀",
+    "baMoHer",
+    "侵权词A",
+    "敏感词B"
+  ],
+  "categories": {
+    "electronics": ["手机壳", "数据线"],
+    "clothing": ["T恤", "连衣裙"]
+  },
+  "max_retry_count": 3
+}

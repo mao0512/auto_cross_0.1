@@ -1,0 +1,17 @@
+# config/selectors.yaml
+# 妙手ERP页面元素定位器
+
+erp_login:
+  username_input: "//input[@placeholder='请输入账号']"
+  password_input: "//input[@placeholder='请输入密码']"
+  login_button: "//button[contains(text(), '登录')]"
+
+product_list:
+  search_box: "#search-keyword"
+  add_product_btn: ".btn-add-product"
+  table_rows: "tbody tr.data-row"
+
+product_detail:
+  title_input: "input[name='title']"
+  price_input: "input[name='price']"
+  description_editor: ".editor-content"
